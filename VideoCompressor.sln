@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.1.11312.151 d18.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VideoCompressor", "VideoCompressor.csproj", "{39F3A33B-62C1-BB9F-3AC8-ACA4DA5B99C3}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{39F3A33B-62C1-BB9F-3AC8-ACA4DA5B99C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{39F3A33B-62C1-BB9F-3AC8-ACA4DA5B99C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{39F3A33B-62C1-BB9F-3AC8-ACA4DA5B99C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{39F3A33B-62C1-BB9F-3AC8-ACA4DA5B99C3}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8E63914C-6D9A-4EC8-8752-5D8AFC638AA5}
+	EndGlobalSection
+EndGlobal
