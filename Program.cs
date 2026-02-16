@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Text.RegularExpressions;
 using System.Text.Json;
 
 if (args.Length < 2)
@@ -32,7 +31,7 @@ if (!outputPath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
 }
 
 string ffmpegPath = args.Length >= 4 ? args[3] : "ffmpeg";
-string? ffprobePath = args.Length >= 5 ? args[4] : TryResolveSiblingTool(ffmpegPath, "ffprobe");
+string ffprobePath = args.Length >= 5 ? args[4] : "ffprobe";
 
 Console.WriteLine($"Входной файл: {inputPath}");
 Console.WriteLine($"Целевой размер: {targetSizeMb:F2} MB");
@@ -41,11 +40,11 @@ Console.WriteLine($"Выходной файл: {outputPath}");
 VideoMetadata metadata;
 try
 {
-    metadata = await ProbeMetadataAsync(ffmpegPath, ffprobePath, inputPath);
+    metadata = await ProbeMetadataAsync(ffprobePath, inputPath);
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"Ошибка получения метаданных видео: {ex.Message}");
+    Console.Error.WriteLine($"Ошибка ffprobe: {ex.Message}");
     return 1;
 }
 
@@ -98,26 +97,16 @@ for (int attempt = 1; attempt <= maxAttempts; attempt++)
 
 return 0;
 
-static async Task<VideoMetadata> ProbeMetadataAsync(string ffmpegPath, string? ffprobePath, string inputPath)
+static async Task<VideoMetadata> ProbeMetadataAsync(string ffprobePath, string inputPath)
 {
-    if (!string.IsNullOrWhiteSpace(ffprobePath))
+    string args = $"-v error -show_entries format=duration:stream=codec_type,bit_rate -of json \"{inputPath}\"";
+    ProcessResult result = await RunProcessAsync(ffprobePath, args, printLiveOutput: false);
+    if (result.ExitCode != 0)
     {
-        string args = $"-v error -show_entries format=duration:stream=codec_type,bit_rate -of json \"{inputPath}\"";
-        ProcessResult result = await RunProcessAsync(ffprobePath, args, printLiveOutput: false);
-        if (result.ExitCode == 0)
-        {
-            return ParseMetadataFromFfprobeJson(result.StdOut);
-        }
-
-        Console.WriteLine("Предупреждение: ffprobe недоступен или вернул ошибку, используем ffmpeg для определения длительности.");
+        throw new InvalidOperationException(result.StdErr.Trim());
     }
 
-    return await ProbeMetadataViaFfmpegAsync(ffmpegPath, inputPath);
-}
-
-static VideoMetadata ParseMetadataFromFfprobeJson(string ffprobeJson)
-{
-    using JsonDocument doc = JsonDocument.Parse(ffprobeJson);
+    using JsonDocument doc = JsonDocument.Parse(result.StdOut);
     JsonElement root = doc.RootElement;
 
     double duration = 0;
@@ -152,57 +141,7 @@ static VideoMetadata ParseMetadataFromFfprobeJson(string ffprobeJson)
         }
     }
 
-    return new VideoMetadata(duration, audioKbps, MetadataSource.Ffprobe);
-}
-
-static async Task<VideoMetadata> ProbeMetadataViaFfmpegAsync(string ffmpegPath, string inputPath)
-{
-    ProcessResult result = await RunProcessAsync(ffmpegPath, $"-i \"{inputPath}\"", printLiveOutput: false);
-    string probeOutput = string.IsNullOrWhiteSpace(result.StdErr) ? result.StdOut : result.StdErr;
-
-    double duration = ParseDurationFromFfmpegOutput(probeOutput);
-    int? audioKbps = ParseAudioBitrateFromFfmpegOutput(probeOutput);
-
-    if (duration <= 0)
-    {
-        throw new InvalidOperationException("Не удалось извлечь длительность видео через ffmpeg. Установите ffprobe для более точного анализа.");
-    }
-
-    return new VideoMetadata(duration, audioKbps, MetadataSource.FfmpegFallback);
-}
-
-static double ParseDurationFromFfmpegOutput(string output)
-{
-    Match m = Regex.Match(output, @"Duration:\s*(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)", RegexOptions.IgnoreCase);
-    if (!m.Success)
-    {
-        return 0;
-    }
-
-    if (!int.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hours) ||
-        !int.TryParse(m.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int minutes) ||
-        !double.TryParse(m.Groups[3].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds))
-    {
-        return 0;
-    }
-
-    return (hours * 3600) + (minutes * 60) + seconds;
-}
-
-static int? ParseAudioBitrateFromFfmpegOutput(string output)
-{
-    Match m = Regex.Match(output, @"Audio:.*?(\d{2,4})\s*kb/s", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-    if (!m.Success)
-    {
-        return null;
-    }
-
-    if (!int.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int kbps))
-    {
-        return null;
-    }
-
-    return Math.Max(32, kbps);
+    return new VideoMetadata(duration, audioKbps);
 }
 
 static int CalculateAudioBitrateKbps(double targetTotalKbps, int? originalAudioKbps)
@@ -336,33 +275,7 @@ static void PrintUsage()
     Console.WriteLine();
     Console.WriteLine("Пример:");
     Console.WriteLine("  dotnet run -- input.mkv 25 output.mp4");
-    Console.WriteLine();
-    Console.WriteLine("Примечание: ffprobe опционален (рекомендуется для более точного анализа).");
 }
 
-static string? TryResolveSiblingTool(string primaryTool, string siblingToolName)
-{
-    if (Path.IsPathRooted(primaryTool) || primaryTool.Contains(Path.DirectorySeparatorChar) || primaryTool.Contains(Path.AltDirectorySeparatorChar))
-    {
-        string? dir = Path.GetDirectoryName(primaryTool);
-        if (!string.IsNullOrWhiteSpace(dir))
-        {
-            string candidate = Path.Combine(dir, siblingToolName + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-    }
-
-    return siblingToolName;
-}
-
-internal enum MetadataSource
-{
-    Ffprobe,
-    FfmpegFallback,
-}
-
-internal sealed record VideoMetadata(double DurationSeconds, int? OriginalAudioBitrateKbps, MetadataSource Source);
+internal sealed record VideoMetadata(double DurationSeconds, int? OriginalAudioBitrateKbps);
 internal sealed record ProcessResult(int ExitCode, string StdOut, string StdErr);
